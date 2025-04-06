@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pool Game</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #1a472a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      border: 5px solid #facc15;
+      border-radius: 10px;
+      background-color: green;
+      touch-action: none;
+    }
+    #powerContainer {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #power {
+      font-size: 14px;
+    }
+    #powerBar {
+      width: 150px;
+      height: 10px;
+      background-color: #333;
+      border: 1px solid #fff;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    #powerFill {
+      height: 100%;
+      background-color: #facc15;
+      width: 0%;
+    }
+    #messageBox {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 1em;
+      z-index: 10;
+    }
+    #messageBox.active {
+      display: flex;
+      flex-direction: column;
+    }
+    #messageBall {
+      background: white;
+      color: black;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      margin-bottom: 1em;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="poolCanvas"></canvas>
+  <div id="powerContainer">
+    <div id="power">Power: 0</div>
+    <div id="powerBar"><div id="powerFill"></div></div>
+  </div>
+  <div id="messageBox" onclick="closeMessage()">
+    <div id="messageBall"></div>
+    <div id="messageText"></div>
+    <small>Tap to continue...</small>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("poolCanvas");
+    const ctx = canvas.getContext("2d");
+    const powerDisplay = document.getElementById("power");
+    const powerFill = document.getElementById("powerFill");
+    const messageBox = document.getElementById("messageBox");
+    const messageBall = document.getElementById("messageBall");
+    const messageText = document.getElementById("messageText");
+
+    const messages = [
+      "Even if the confidence level were to be 99.999%, you'd still turn out to be significant for me",
+      "I shall never take you for granted <3",
+      "Come to my home? there is a sale on clothes, they're a 100% off tonight",
+      "Tu jaane patang chhe ne hu chhu koi dor..",
+      "Wavum woww. Hottest girl in the world is reading this!",
+      "Huuu taneee vaali kari dauuuu?",
+      "Hemoll, bh bh bh bh bheeens",
+      "I have many pick up lines, but I'd rather pick you up for a dinner date",
+      "Tu khaate hue mujhe bahot acchi lagti hai <3",
+      "Ae baccha log, aiya cricket nhi ramvanu, tamaara bhai ni fielding chalu chhe",
+      "Ek tu cute, ek mei cute, baaki sab darawne bhoot",
+      "Who says love is simple? My interest for you is always compounding!",
+      "Hi, I'm here. Baaki ki 2 wishes kya hai teri?",
+      "Tu batting kr lena, commentary aur bowling mei sambhal lunga <3",
+      "Sabke paas cards mei ek card kam milta hoga, kyuki queen of hearts toh tu hai"
+    ];
+
+    let width = window.innerWidth < 700 ? 320 : 640;
+    let height = window.innerWidth < 700 ? 180 : 360;
+    canvas.width = width;
+    canvas.height = height;
+
+    let cueBall = { x: 100, y: height / 2, vx: 0, vy: 0, radius: 10, pocketed: false };
+    let balls = [];
+    let power = 0;
+    let charging = false;
+    let angle = 0;
+    let pocketed = [];
+    let ballMessages = {};
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    function setup() {
+      const spacing = 25;
+      const startX = width - 150;
+      const startY = height / 2;
+      let n = 1;
+      for (let row = 0; row < 5; row++) {
+        for (let i = 0; i <= row; i++) {
+          if (n > 15) break;
+          balls.push({
+            x: startX + row * spacing,
+            y: startY + (i - row / 2) * spacing,
+            vx: 0,
+            vy: 0,
+            radius: 10,
+            number: n,
+            pocketed: false
+          });
+          n++;
+        }
+      }
+      shuffle(messages).forEach((msg, i) => {
+        ballMessages[i + 1] = msg;
+      });
+    }
+
+    function resolveCollision(ball, other) {
+      const dx = other.x - ball.x;
+      const dy = other.y - ball.y;
+      const distance = Math.hypot(dx, dy);
+      const overlap = ball.radius + other.radius - distance;
+      if (overlap > 0) {
+        const correction = overlap / 2;
+        const angle = Math.atan2(dy, dx);
+        const sin = Math.sin(angle);
+        const cos = Math.cos(angle);
+
+        ball.x -= correction * cos;
+        ball.y -= correction * sin;
+        other.x += correction * cos;
+        other.y += correction * sin;
+
+        const vxTotal = ball.vx - other.vx;
+        const vyTotal = ball.vy - other.vy;
+        const dotProduct = dx * vxTotal + dy * vyTotal;
+        const collisionScale = dotProduct / (distance * distance);
+
+        const vx = collisionScale * dx;
+        const vy = collisionScale * dy;
+
+        ball.vx -= vx;
+        ball.vy -= vy;
+        other.vx += vx;
+        other.vy += vy;
+      }
+    }
+
+    function update() {
+      const all = [cueBall, ...balls];
+      all.forEach(ball => {
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+        ball.vx *= 0.98;
+        ball.vy *= 0.98;
+
+        if (ball.x - ball.radius < 0 || ball.x + ball.radius > width) ball.vx *= -1;
+        if (ball.y - ball.radius < 0 || ball.y + ball.radius > height) ball.vy *= -1;
+      });
+
+      for (let i = 0; i < all.length; i++) {
+        for (let j = i + 1; j < all.length; j++) {
+          if (!all[i].pocketed && !all[j].pocketed) {
+            resolveCollision(all[i], all[j]);
+          }
+        }
+      }
+
+      all.forEach(ball => {
+        const pockets = [
+          [0, 0], [width / 2, 0], [width, 0],
+          [0, height], [width / 2, height], [width, height]
+        ];
+        const pocketRadius = 36;
+        pockets.forEach(([px, py]) => {
+          if (!ball.pocketed && Math.hypot(ball.x - px, ball.y - py) < pocketRadius) {
+            ball.pocketed = true;
+            if (ball.number) {
+              showMessage(ball.number);
+              if (pocketed.length === 14) {
+                setTimeout(() => {
+                  messageText.innerHTML = "the ball's in your court <span style='color: pink'>&lt;3</span>";
+                  messageBall.style.display = "none";
+                  messageBox.classList.add("active");
+                }, 1000);
+              }
+              pocketed.push(ball.number);
+            } else {
+              setTimeout(() => {
+                cueBall.x = 100;
+                cueBall.y = height / 2;
+                cueBall.vx = 0;
+                cueBall.vy = 0;
+                cueBall.pocketed = false;
+              }, 1000);
+            }
+          }
+        });
+      });
+    }
+
+    function drawBall(ball, color = "yellow") {
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.fillStyle = "black";
+      ctx.font = "10px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      if (ball.number) ctx.fillText(ball.number, ball.x, ball.y);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "green";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.fillStyle = "black";
+      const pocketRadius = 36;
+      const pockets = [
+        [0, 0], [width / 2, 0], [width, 0],
+        [0, height], [width / 2, height], [width, height]
+      ];
+      pockets.forEach(([x, y]) => {
+        ctx.beginPath();
+        ctx.arc(x, y, pocketRadius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (!charging && !cueBall.pocketed) {
+        ctx.beginPath();
+        ctx.moveTo(cueBall.x, cueBall.y);
+        ctx.lineTo(cueBall.x + Math.cos(angle) * 30, cueBall.y + Math.sin(angle) * 30);
+        ctx.strokeStyle = "white";
+        ctx.stroke();
+      }
+
+      if (!cueBall.pocketed) drawBall(cueBall, "white");
+      balls.forEach(ball => {
+        if (!ball.pocketed) drawBall(ball);
+      });
+
+      powerDisplay.innerText = `Power: ${power}`;
+      powerFill.style.width = `${power}%`;
+    }
+
+    function showMessage(num) {
+      messageBall.innerText = num;
+      messageBall.style.display = "flex";
+      messageText.innerText = ballMessages[num];
+      messageBox.classList.add("active");
+    }
+
+    function closeMessage() {
+      messageBox.classList.remove("active");
+    }
+
+    canvas.addEventListener("mousedown", () => { if (!cueBall.pocketed) charging = true; });
+    canvas.addEventListener("mouseup", () => {
+      if (!cueBall.pocketed) {
+        charging = false;
+        cueBall.vx = Math.cos(angle) * power * 0.4;
+        cueBall.vy = Math.sin(angle) * power * 0.4;
+        power = 0;
+      }
+    });
+    canvas.addEventListener("mousemove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      angle = Math.atan2(e.clientY - rect.top - cueBall.y, e.clientX - rect.left - cueBall.x);
+    });
+
+    canvas.addEventListener("touchstart", () => { if (!cueBall.pocketed) charging = true; });
+    canvas.addEventListener("touchend", () => {
+      if (!cueBall.pocketed) {
+        charging = false;
+        cueBall.vx = Math.cos(angle) * power * 0.4;
+        cueBall.vy = Math.sin(angle) * power * 0.4;
+        power = 0;
+      }
+    });
+    canvas.addEventListener("touchmove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+      angle = Math.atan2(touch.clientY - rect.top - cueBall.y, touch.clientX - rect.left - cueBall.x);
+    });
+
+    setup();
+    setInterval(() => {
+      if (charging) power = Math.min(100, power + 1);
+      update();
+      draw();
+    }, 16);
+  </script>
+</body>
+</html>
